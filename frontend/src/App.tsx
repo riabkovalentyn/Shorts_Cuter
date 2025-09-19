@@ -1,7 +1,7 @@
 import { Routes, Route, NavLink } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import ClipsList from './pages/ClipsList';
-import Settings from './pages/Settings';
+import Settings from './pages/Settings.tsx';
 
 export default function App() {
   return (

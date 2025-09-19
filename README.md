@@ -16,9 +16,71 @@ MVP приложения для нарезки стримов на клипы (S
 - `backend/` — серверное приложение
 - `docker-compose.yml` — локальный запуск (mongo + backend + frontend)
 
-## Быстрый старт (позже будет дополнено)
-1. Установите Docker и Docker Desktop.
-2. Запустите:
-   - docker compose up --build
+## Единая точка запуска
 
-Дальше добавим Dockerfile для фронта/бэка и инструкцию по переменным окружения.
+Локальная разработка (оба сервиса поднимутся одновременно):
+
+1) Установите зависимости в корне (мы добавили скрипты):
+
+```powershell
+cd D:\YouTube_Shorts_Cuter\Shorts_Cuter
+npm install
+```
+
+2) Поднимите Mongo (в Docker) отдельно, чтобы бэкенд мог подключиться:
+
+```powershell
+docker compose up -d mongo
+```
+
+3) Старт разработки (фронтенд + бэкенд):
+
+```powershell
+npm run dev
+```
+
+- Бэкенд: http://localhost:4000
+- Фронтенд: http://localhost:5173
+
+Сборка проекта:
+
+```powershell
+npm run build
+```
+
+Прод-запуск локально (бэкенд + превью фронта):
+
+```powershell
+npm start
+```
+
+## Переменные окружения (YouTube OAuth)
+
+Заполните файл `backend/.env` по образцу `backend/.env.sample`:
+
+```
+PORT=4000
+MONGO_URI=mongodb://localhost:27017/shorts_cuter
+STORAGE_DIR=./storage
+
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+YT_REDIRECT_URI=http://localhost:4000/api/auth/youtube/callback
+```
+
+Без `GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET` кнопка подключения YouTube вернёт ошибку, это ожидаемо. После заполнения переменных нажмите Connect в Settings, пройдите OAuth, refreshToken сохранится в Mongo.
+
+## Docker Compose (полный стек)
+
+Для прод-сборки/демо можно запустить весь стек через Docker (Mongo + Backend + Frontend):
+
+```powershell
+docker compose up --build
+```
+
+Перед этим передайте секреты через переменные окружения/файл `.env` и пробросьте их в сервис бэкенда в compose при необходимости.
+
+## Известные предупреждения/«PROBLEMS»
+
+- Tailwind @tailwind/@apply в `frontend/src/index.css`: подавлены в VS Code (это валидные директивы для PostCSS). См. `.vscode/settings.json`.
+- Вкладка Docker может показывать уязвимости базовых образов. Мы используем slim-образы (node:20-bookworm-slim, nginx:bookworm). Для прод окружений используйте внутренний сканер и политику обновлений.

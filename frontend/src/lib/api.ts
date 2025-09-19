@@ -27,3 +27,8 @@ export async function getYouTubeAuthUrl() {
   const { data } = await api.get('/auth/youtube/url');
   return data.url as string;
 }
+
+export async function getYouTubeStatus() {
+  const { data } = await api.get('/auth/youtube/status');
+  return data as { configured: boolean; connected: boolean };
+}
