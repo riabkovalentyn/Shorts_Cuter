@@ -18,10 +18,10 @@ services:
     environment:
       - MONGO_URI=mongodb://mongo:27017/shorts_cuter
       - NODE_ENV=development
+      - STORAGE_DIR=/app/storage
     ports:
       - "4000:4000"
     volumes:
-      - ./backend:/app
       - ./storage:/app/storage
     command: ["node", "dist/index.js"]
 
@@ -31,12 +31,9 @@ services:
     depends_on:
       - backend
     ports:
-      - "5173:5173"
+      - "5173:80"
     environment:
-      - VITE_API_URL=http://localhost:4000
-    volumes:
-      - ./frontend:/app
-    command: ["npm", "run", "dev", "--", "--host"]
+      - VITE_API_URL=http://backend:4000
 
 volumes:
   mongo_data:
