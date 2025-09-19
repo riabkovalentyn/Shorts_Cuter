@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: shorts-cuter-backend
+    env: docker
+    plan: free
+    dockerfilePath: backend/Dockerfile
+    region: frankfurt
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: STORAGE_DIR
+        value: /app/storage
+      - key: MONGO_URI
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: YT_REDIRECT_URI
+        sync: false
+      - key: REDIS_URL
+        sync: false
+    disk:
+      name: storage
+      mountPath: /app/storage
+      sizeGB: 1
+
+  - type: static
+    name: shorts-cuter-frontend
+    plan: free
+    buildCommand: cd frontend && npm ci && npm run build
+    publishPath: frontend/dist
+    headers:
+      - path: /**
+        name: Cache-Control
+        value: public, max-age=600
+    envVars:
+      - key: VITE_API_URL
+        # Replace with your backend Render URL after first deploy, e.g. https://shorts-cuter-backend.onrender.com
+        value: https://shorts-cuter-backend.onrender.com

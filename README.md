@@ -112,3 +112,24 @@ YT_REDIRECT_URI=http://localhost:4000/api/auth/youtube/callback
 - Проверка:
 	- В PowerShell: ffmpeg -version; ffprobe -version; yt-dlp --version
 	- Если что-то не найдено — перезапустите терминал после установки, чтобы PATH обновился.
+
+## Деплой (бесплатно)
+
+Вариант A: Render.com (бэкенд + статический фронтенд)
+
+- В репозитории уже есть файл `render.yaml`.
+- В Render создайте новый Blueprint Deploy из вашего форка.
+- Backend (Docker):
+	- Переменные окружения: MONGO_URI (MongoDB Atlas), GOOGLE_CLIENT_ID/SECRET, YT_REDIRECT_URI, опционально REDIS_URL.
+	- Диск: имя `storage`, 1 GB+, точка монтирования `/app/storage`.
+- Frontend (Static Site):
+	- После первого деплоя бэкенда возьмите его URL, выставьте на статике переменную `VITE_API_URL` (например, `https://shorts-cuter-backend.onrender.com`).
+	- Пересоберите статику.
+
+Опционально CI: В Render создайте Deploy Hook для backend и сохраните URL в GitHub Secrets как `RENDER_BACKEND_HOOK_URL`. Workflow `.github/workflows/deploy-backend-render.yml` будет триггерить деплой на пуш в `main`.
+
+Вариант B: GitHub Pages (только фронтенд)
+
+- Бэкенд разместите на Render (или другом хостинге), возьмите публичный URL.
+- В GitHub Secrets сохраните `PUBLIC_API_URL` с адресом бэкенда.
+- Workflow `.github/workflows/deploy-frontend-pages.yml` собирает `frontend` с `VITE_API_URL` и публикует в GitHub Pages.
