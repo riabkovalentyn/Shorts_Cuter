@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { listClips, uploadClip } from '../lib/api';
+import { useToasts } from '../shared/Toaster';
 import ClipCard from '../shared/ClipCard';
 
 function useQuery() {
@@ -11,6 +12,7 @@ export default function ClipsList() {
   const { jobId } = useQuery() as { jobId?: string };
   const [clips, setClips] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const { push } = useToasts();
 
   async function refresh() {
     setLoading(true);
@@ -28,8 +30,14 @@ export default function ClipsList() {
   }, [jobId]);
 
   async function onUpload(id: string) {
-    await uploadClip(id);
-    await refresh();
+    try {
+      push({ kind: 'info', text: 'Uploading clip…' });
+      await uploadClip(id);
+      push({ kind: 'success', text: 'Uploaded to YouTube' });
+      await refresh();
+    } catch (e: any) {
+      push({ kind: 'error', text: e?.response?.data?.error || e?.message || 'Upload failed' });
+    }
   }
 
   return (

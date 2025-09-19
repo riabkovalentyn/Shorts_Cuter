@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { createProject, getJob } from '../lib/api';
 import { useNavigate } from 'react-router-dom';
+import { useToasts } from '../shared/Toaster';
 
 export default function Dashboard() {
   const [url, setUrl] = useState('');
@@ -8,11 +9,16 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { push } = useToasts();
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     try {
+      if (!/^https?:\/\//i.test(url)) {
+        push({ kind: 'error', text: 'Please enter a valid http/https URL' });
+        return;
+      }
       const { jobId } = await createProject(url, len);
       setStatus('processing');
       // simple poll
@@ -24,6 +30,8 @@ export default function Dashboard() {
           if (job.status === 'done') navigate('/clips?jobId=' + jobId);
         }
       }, 2000);
+    } catch (e: any) {
+      push({ kind: 'error', text: e?.response?.data?.error || e?.message || 'Failed to create job' });
     } finally {
       setLoading(false);
     }
@@ -57,9 +65,9 @@ export default function Dashboard() {
           <div className="card-body">
             <h3 className="font-semibold mb-2">Tips</h3>
             <ul className="list-disc pl-5 text-sm text-slate-600 space-y-1">
-              <li>Use direct MP4 URLs for faster MVP testing.</li>
+              <li>YouTube links supported (best with yt-dlp installed).</li>
+              <li>Direct media URLs (mp4) also work.</li>
               <li>Default clip length is 30 seconds.</li>
-              <li>Processed clips will appear on the Clips page.</li>
             </ul>
           </div>
         </div>

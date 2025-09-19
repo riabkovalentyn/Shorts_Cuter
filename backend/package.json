@@ -16,7 +16,8 @@
     "googleapis": "^160.0.0",
     "mongoose": "^8.6.0",
     "morgan": "^1.10.0",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "ytdl-core": "^4.11.5"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

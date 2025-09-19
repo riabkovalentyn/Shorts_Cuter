@@ -84,3 +84,19 @@ docker compose up --build
 
 - Tailwind @tailwind/@apply в `frontend/src/index.css`: подавлены в VS Code (это валидные директивы для PostCSS). См. `.vscode/settings.json`.
 - Вкладка Docker может показывать уязвимости базовых образов. Мы используем slim-образы (node:20-bookworm-slim, nginx:bookworm). Для прод окружений используйте внутренний сканер и политику обновлений.
+
+## Трюки и устранение неполадок (Windows)
+
+- Установите FFmpeg (для ffmpeg/ffprobe):
+	- Chocolatey: choco install ffmpeg
+	- Winget: winget install Gyan.FFmpeg
+	- Вручную: скачайте сборку с https://www.gyan.dev/ffmpeg/builds/ и добавьте ffmpeg.exe/ffprobe.exe в PATH
+
+- Установите yt-dlp (надёжная загрузка YouTube):
+	- Chocolatey: choco install yt-dlp
+	- Winget: winget install yt-dlp.yt-dlp
+	- Вручную: https://github.com/yt-dlp/yt-dlp/releases и добавить в PATH
+
+- Проверка:
+	- В PowerShell: ffmpeg -version; ffprobe -version; yt-dlp --version
+	- Если что-то не найдено — перезапустите терминал после установки, чтобы PATH обновился.

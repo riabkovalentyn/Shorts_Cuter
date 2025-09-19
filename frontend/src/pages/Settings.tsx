@@ -31,7 +31,9 @@ export default function Settings() {
             <div className="text-sm text-slate-700">Config: {status.configured ? 'OK' : 'Missing envs'} · Connected: {status.connected ? 'Yes' : 'No'}</div>
           )}
           {error && <div className="text-sm text-red-600">{error}</div>}
-          <button onClick={fetchUrl} className="btn btn-danger">Connect YouTube</button>
+          <button onClick={fetchUrl} className="btn btn-danger" disabled={status?.configured === false}>
+            {status?.configured === false ? 'Config missing' : 'Connect YouTube'}
+          </button>
           {authUrl && <div className="text-sm break-all text-slate-500">Auth URL: {authUrl}</div>}
         </div>
       </div>

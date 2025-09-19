@@ -1,6 +1,12 @@
 export default function ClipCard({ clip, onUpload }: { clip: any; onUpload: () => void }) {
-  const thumbRel = clip.thumbPath?.split('storage\\').pop()?.replace(/\\/g, '/');
-  const fileRel = clip.filePath?.split('storage\\').pop()?.replace(/\\/g, '/');
+  const normalizeRel = (p?: string) => {
+    if (!p) return null;
+    const idx = p.toLowerCase().lastIndexOf('storage');
+    const rel = idx >= 0 ? p.slice(idx + 'storage'.length + 1) : p;
+    return rel.replace(/\\/g, '/');
+  };
+  const thumbRel = normalizeRel(clip.thumbPath);
+  const fileRel = normalizeRel(clip.filePath);
   const thumbUrl = thumbRel ? `http://localhost:4000/storage/${thumbRel}` : null;
   const fileUrl = fileRel ? `http://localhost:4000/storage/${fileRel}` : '#';
 
