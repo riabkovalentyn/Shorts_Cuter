@@ -1,14 +1,12 @@
 export default function ClipCard({ clip, onUpload }: { clip: any; onUpload: () => void }) {
-  const normalizeRel = (p?: string) => {
-    if (!p) return null;
-    const idx = p.toLowerCase().lastIndexOf('storage');
-    const rel = idx >= 0 ? p.slice(idx + 'storage'.length + 1) : p;
-    return rel.replace(/\\/g, '/');
+  const thumbUrl = clip.thumbUrl || null;
+  const fileUrl = clip.fileUrl || '#';
+  const mmss = (s?: number) => {
+    if (typeof s !== 'number') return '0:00';
+    const m = Math.floor(s / 60);
+    const ss = Math.floor(s % 60).toString().padStart(2, '0');
+    return `${m}:${ss}`;
   };
-  const thumbRel = normalizeRel(clip.thumbPath);
-  const fileRel = normalizeRel(clip.filePath);
-  const thumbUrl = thumbRel ? `http://localhost:4000/storage/${thumbRel}` : null;
-  const fileUrl = fileRel ? `http://localhost:4000/storage/${fileRel}` : '#';
 
   return (
     <div className="card overflow-hidden">
@@ -22,7 +20,8 @@ export default function ClipCard({ clip, onUpload }: { clip: any; onUpload: () =
           <div className="font-semibold line-clamp-1">{clip.title || 'Untitled'}</div>
           <span className={`text-xs px-2 py-0.5 rounded-full ${clip.status === 'uploaded' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{clip.status}</span>
         </div>
-        <div className="text-sm text-slate-600 line-clamp-2">{clip.description}</div>
+  <div className="text-sm text-slate-600 line-clamp-2">{clip.description}</div>
+  <div className="text-xs text-slate-500">Start {mmss(clip.startSec)} • Duration {mmss(clip.durationSec)}</div>
         <div className="flex flex-wrap gap-1 text-xs text-slate-500">
           {Array.isArray(clip.hashtags) && clip.hashtags.slice(0, 3).map((h: string) => (
             <span key={h} className="px-2 py-0.5 rounded bg-slate-100">{h}</span>

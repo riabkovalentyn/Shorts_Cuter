@@ -9,7 +9,18 @@ router.get('/', async (req: Request, res: Response) => {
   const { jobId } = req.query as { jobId?: string };
   const q = jobId ? { jobId } : {};
   const clips = await Clip.find(q).lean();
-  res.json(clips);
+  const toPublic = (p?: string) => {
+    if (!p) return p;
+    const idx = p.toLowerCase().lastIndexOf('storage');
+    const rel = idx >= 0 ? p.slice(idx + 'storage'.length + 1) : p;
+    return `/storage/${rel.replace(/\\\\/g, '/')}`;
+  };
+  const data = clips.map((c: any) => ({
+    ...c,
+    fileUrl: toPublic(c.filePath),
+    thumbUrl: toPublic(c.thumbPath),
+  }));
+  res.json(data);
 });
 
 // POST /api/clips/:clipId/upload

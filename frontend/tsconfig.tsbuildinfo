@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/lib/api.ts","./src/pages/clipslist.tsx","./src/pages/dashboard.tsx","./src/pages/settings.tsx","./src/shared/clipcard.tsx","./src/shared/toaster.tsx"],"version":"5.9.2"}

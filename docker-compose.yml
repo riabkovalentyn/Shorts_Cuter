@@ -15,15 +15,25 @@ services:
     container_name: shorts_backend
     depends_on:
       - mongo
+    env_file:
+      - .env
     environment:
-      - MONGO_URI=mongodb://mongo:27017/shorts_cuter
       - NODE_ENV=development
-      - STORAGE_DIR=/app/storage
     ports:
       - "4000:4000"
     volumes:
       - ./storage:/app/storage
     command: ["node", "dist/index.js"]
+
+  # Optional Redis for BullMQ queue
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: shorts_redis
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
 
   frontend:
     build: ./frontend
@@ -37,3 +47,4 @@ services:
 
 volumes:
   mongo_data:
+  # redis_data:

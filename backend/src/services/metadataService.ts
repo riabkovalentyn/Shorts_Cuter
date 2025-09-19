@@ -1,5 +1,6 @@
 import Clip from '../models/Clip';
 import Job from '../models/Job';
+import path from 'node:path';
 
 export const metadataService = {
   async populate(clips: Array<{ _id: string } | any>) {
@@ -28,9 +29,35 @@ export const metadataService = {
 
     for (let i = 0; i < clips.length; i++) {
       const n = i + 1;
-      const title = `Epic Moment #${n}${platform ? ` — from ${platform}` : ''}`;
-      const description = `Auto-generated clip ${n}.${sourceUrl ? `\nSource: ${sourceUrl}` : ''}\nMade with Shorts Cuter.`;
-      const hashtags = Array.from(new Set([...baseTags, '#Gaming']));
+      const c = await Clip.findById((clips[i] as any)._id);
+      if (!c) continue;
+
+      // Build unique title/description using timing
+      const mmss = (s?: number) => {
+        if (typeof s !== 'number') return '0:00';
+        const m = Math.floor(s / 60);
+        const ss = Math.floor(s % 60).toString().padStart(2, '0');
+        return `${m}:${ss}`;
+      };
+      const start = (c as any).startSec as number | undefined;
+      const dur = (c as any).durationSec as number | undefined;
+      const timing = start != null && dur != null ? `at ${mmss(start)} (${mmss(dur)})` : `part ${n}`;
+
+      const title = `${platform ? `${platform} ` : ''}Highlight ${n} — ${timing}`;
+      const description = [
+        `Clip ${n} ${timing}.`,
+        sourceUrl ? `Source: ${sourceUrl}` : undefined,
+        `Generated on ${new Date().toLocaleDateString()} by Shorts Cuter.`,
+      ].filter(Boolean).join('\n');
+
+      const specificTags = [
+        (platform && `#${platform}`) || undefined,
+        start != null ? `#Start_${Math.floor(start)}s` : undefined,
+        dur != null ? `#Duration_${Math.floor(dur)}s` : undefined,
+        `#Clip${n}`,
+      ].filter(Boolean) as string[];
+      const hashtags = Array.from(new Set([...baseTags, ...specificTags]));
+
       await Clip.findByIdAndUpdate((clips[i] as any)._id, { title, description, hashtags });
     }
   },

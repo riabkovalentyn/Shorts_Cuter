@@ -78,7 +78,19 @@ YT_REDIRECT_URI=http://localhost:4000/api/auth/youtube/callback
 docker compose up --build
 ```
 
-Перед этим передайте секреты через переменные окружения/файл `.env` и пробросьте их в сервис бэкенда в compose при необходимости.
+Перед этим создайте файл `.env` в корне по образцу `.env.template` и заполните OAuth секреты. Backend автоматически получит их через `env_file`.
+
+Пример `.env`:
+
+```
+MONGO_URI=mongodb://mongo:27017/shorts_cuter
+PORT=4000
+STORAGE_DIR=/app/storage
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+YT_REDIRECT_URI=http://localhost:4000/api/auth/youtube/callback
+# REDIS_URL=redis://redis:6379
+```
 
 ## Известные предупреждения/«PROBLEMS»
 
