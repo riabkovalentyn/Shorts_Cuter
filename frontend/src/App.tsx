@@ -4,7 +4,7 @@ import Dashboard from './pages/Dashboard';
 import ClipsList from './pages/ClipsList';
 import Settings from './pages/Settings';
 import { getYouTubeStatus } from './lib/api';
-import Toaster, { useToasts } from './shared/Toaster';
+import Toaster, { useToasts } from './shared/Toaster.tsx';
 
 export default function App() {
   const [ytConnected, setYtConnected] = useState<boolean>(false);
@@ -33,9 +33,13 @@ export default function App() {
             <NavLink to="/settings" className={({isActive}) => `hover:underline ${isActive ? 'font-semibold' : 'opacity-90'}`}>Settings</NavLink>
           </nav>
           <div className="ml-auto flex items-center gap-2">
-            <span className={`text-xs px-2 py-0.5 rounded-full ${ytConnected ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-800'}`}>
-              {ytConnected ? 'YouTube Connected' : (ytConfigured ? 'YouTube Not Connected' : 'YouTube Not Configured')}
-            </span>
+            {ytConnected ? (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-800">YouTube Connected</span>
+            ) : (
+              <NavLink to="/settings" className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-800 hover:bg-slate-200">
+                {ytConfigured ? 'YouTube Not Connected' : 'YouTube Not Configured'}
+              </NavLink>
+            )}
           </div>
         </div>
       </header>

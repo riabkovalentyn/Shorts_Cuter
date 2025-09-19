@@ -6,24 +6,53 @@ import { spawn, spawnSync } from 'node:child_process';
 
 const storageDir = process.env.STORAGE_DIR || path.resolve(__dirname, '..', '..', 'storage');
 const downloadsDir = path.join(storageDir, 'downloads');
+const binDir = path.join(storageDir, 'bin');
 
 function ensureDirs() {
   fs.mkdirSync(downloadsDir, { recursive: true });
+  fs.mkdirSync(binDir, { recursive: true });
 }
 
 export const ingestService = {
+  async getYtDlpPath(): Promise<string | null> {
+    // Prefer system yt-dlp if present
+    const sys = spawnSync('yt-dlp', ['--version'], { stdio: 'ignore' });
+    if (sys.status === 0) return 'yt-dlp';
+
+    // Try local cached binary under storage/bin
+    const exeName = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
+    const localPath = path.join(binDir, exeName);
+    if (fs.existsSync(localPath)) return localPath;
+
+    // Attempt to download latest binary
+    const url = process.platform === 'win32'
+      ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
+      : 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
+    try {
+      const resp = await axios.get(url, { responseType: 'stream' });
+      await new Promise<void>((resolve, reject) => {
+        const ws = fs.createWriteStream(localPath);
+        resp.data.pipe(ws);
+        ws.on('finish', resolve);
+        ws.on('error', reject);
+      });
+      if (process.platform !== 'win32') {
+        try { fs.chmodSync(localPath, 0o755); } catch {}
+      }
+      return localPath;
+    } catch {
+      return null;
+    }
+  },
   async download(sourceUrl: string, jobId: string): Promise<string> {
     ensureDirs();
     const outPath = path.join(downloadsDir, `${jobId}.mp4`);
     // Try YouTube first if URL matches, else HTTP stream
     try {
       if (ytdl.validateURL(sourceUrl)) {
-        const hasYtDlp = () => {
-          const res = spawnSync('yt-dlp', ['--version'], { stdio: 'ignore' });
-          return res.status === 0;
-        };
-        if (hasYtDlp()) {
-          console.log('[ingest] Using yt-dlp to download YouTube video');
+        const ytDlpPath = await this.getYtDlpPath();
+        if (ytDlpPath) {
+          console.log(`[ingest] Using yt-dlp (${ytDlpPath}) to download YouTube video`);
           await new Promise<void>((resolve, reject) => {
             const args = [
               '--no-playlist',
@@ -32,7 +61,7 @@ export const ingestService = {
               '-o', outPath,
               sourceUrl,
             ];
-            const cp = spawn('yt-dlp', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+            const cp = spawn(ytDlpPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
             let stderr = '';
             cp.stderr.on('data', (d) => (stderr += d.toString()));
             cp.on('error', (e) => reject(e));
