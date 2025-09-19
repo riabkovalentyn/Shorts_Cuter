@@ -1,0 +1,38 @@
+# Node
+node_modules/
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+
+# Builds
+dist/
+build/
+.turbo/
+.next/
+.cache/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Editor/OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python (if any scripts)
+__pycache__/
+*.pyc
+
+# Media outputs
+storage/
+downloads/
+tmp/
