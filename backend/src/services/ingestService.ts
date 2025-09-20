@@ -3,6 +3,7 @@ import path from 'node:path';
 import axios from 'axios';
 import ytdl from 'ytdl-core';
 import { spawn, spawnSync } from 'node:child_process';
+import { Readable } from 'node:stream';
 
 const storageDir = process.env.STORAGE_DIR || path.resolve(__dirname, '..', '..', '..', 'storage');
 const downloadsDir = path.join(storageDir, 'downloads');
@@ -20,6 +21,38 @@ function ensureDirs() {
 }
 
 export const ingestService = {
+  _spawnWithWatch(cmd: string, args: string[], opts: { idleTimeoutMs?: number } = {}) {
+    const idleTimeoutMs = opts.idleTimeoutMs ?? 900_000; // 15 minutes idle watchdog for large files
+    return new Promise<void>((resolve, reject) => {
+      const cp = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+      let stderr = '';
+      let lastProgress = Date.now();
+      const timer = setInterval(() => {
+        if (Date.now() - lastProgress > idleTimeoutMs) {
+          try { cp.kill('SIGKILL'); } catch {}
+          clearInterval(timer);
+          return reject(new Error(`Download stalled for more than ${Math.round(idleTimeoutMs/1000)}s`));
+        }
+      }, Math.min(30_000, Math.max(5_000, Math.floor(idleTimeoutMs / 3))));
+      cp.stderr.on('data', (d) => {
+        const s = d.toString();
+        stderr += s;
+        // Heuristic: progress lines for yt-dlp and ffmpeg postprocessing
+        if (/\b(\d{1,3}\.\d%|ETA|Downloading fragment|Downloading video|frame=\s*\d+|time=\s*\d+:\d+:\d+\.\d+|speed=\s*\S+|Merging formats|Destination:)/.test(s)) {
+          lastProgress = Date.now();
+        }
+      });
+      cp.on('error', (e) => {
+        clearInterval(timer);
+        reject(e);
+      });
+      cp.on('close', (code) => {
+        clearInterval(timer);
+        if (code === 0) return resolve();
+        reject(new Error(`yt-dlp failed with code ${code}. ${stderr || ''}`));
+      });
+    });
+  },
   async getYtDlpPath(): Promise<string | null> {
     // Prefer system yt-dlp if present
     const sys = spawnSync('yt-dlp', ['--version'], { stdio: 'ignore' });
@@ -62,44 +95,38 @@ export const ingestService = {
           let firstError: any = null;
           // Attempt 1: prefer progressive mp4 or mp4+m4a to minimize postprocessing issues
           try {
-            await new Promise<void>((resolve, reject) => {
-              const args = [
-                '--no-playlist',
-                '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-                '-o', `${baseNoExt}.%(ext)s`,
-                sourceUrl,
-              ];
-              if (ffmpegBin) args.unshift(ffmpegBin), args.unshift('--ffmpeg-location');
-              const cp = spawn(ytDlpPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-              let stderr = '';
-              cp.stderr.on('data', (d) => (stderr += d.toString()));
-              cp.on('error', (e) => reject(e));
-              cp.on('close', (code) => {
-                if (code === 0) return resolve();
-                reject(new Error(`yt-dlp failed with code ${code}. ${stderr || ''}`));
-              });
-            });
+            const args = [
+              '--no-playlist',
+              '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+              // Robustness flags for large videos / flaky networks
+              '-R', '20', // retries
+              '--fragment-retries', '20',
+              '--socket-timeout', '15',
+              '--retry-sleep', '1:2:10',
+              '--concurrent-fragments', '5',
+              '-o', `${baseNoExt}.%(ext)s`,
+              sourceUrl,
+            ];
+            if (ffmpegBin) args.unshift(ffmpegBin), args.unshift('--ffmpeg-location');
+            await this._spawnWithWatch(ytDlpPath, args, { idleTimeoutMs: 900_000 }); // up to 15 min idle
           } catch (e) {
             firstError = e;
             // Attempt 2: simple best with recode to mp4 to guarantee a usable container
-            await new Promise<void>((resolve, reject) => {
-              const args = [
-                '--no-playlist',
-                '-f', 'best',
-                '--recode-video', 'mp4',
-                '-o', `${baseNoExt}.%(ext)s`,
-                sourceUrl,
-              ];
-              if (ffmpegBin) args.unshift(ffmpegBin), args.unshift('--ffmpeg-location');
-              const cp = spawn(ytDlpPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-              let stderr = '';
-              cp.stderr.on('data', (d) => (stderr += d.toString()));
-              cp.on('error', (er) => reject(er));
-              cp.on('close', (code) => {
-                if (code === 0) return resolve();
-                reject(new Error(`yt-dlp failed with code ${code}. ${stderr || ''}`));
-              });
-            }).catch(() => { throw firstError; });
+            const args = [
+              '--no-playlist',
+              '-f', 'best',
+              '--recode-video', 'mp4',
+              // Robust flags as above
+              '-R', '20',
+              '--fragment-retries', '20',
+              '--socket-timeout', '15',
+              '--retry-sleep', '1:2:10',
+              '--concurrent-fragments', '5',
+              '-o', `${baseNoExt}.%(ext)s`,
+              sourceUrl,
+            ];
+            if (ffmpegBin) args.unshift(ffmpegBin), args.unshift('--ffmpeg-location');
+            await this._spawnWithWatch(ytDlpPath, args, { idleTimeoutMs: 900_000 }).catch(() => { throw firstError; });
           }
           // Detect actual output path (prefer mp4)
           const candidates = ['mp4', 'mkv', 'webm', 'mov', 'm4v'].map((ext) => `${baseNoExt}.${ext}`);
@@ -131,10 +158,20 @@ export const ingestService = {
             const info = await ytdl.getInfo(sourceUrl);
             const itagOrQuality: any = chooseFormat(info.formats);
             await new Promise<void>((resolve, reject) => {
-              ytdl(sourceUrl, { quality: itagOrQuality, filter: 'audioandvideo' })
-                .pipe(fs.createWriteStream(`${baseNoExt}.mp4`))
-                .on('finish', () => resolve())
-                .on('error', reject);
+              const idleTimeoutMs = 180_000; // 3m
+              const out = fs.createWriteStream(`${baseNoExt}.mp4`);
+              const stream = ytdl(sourceUrl, { quality: itagOrQuality, filter: 'audioandvideo', highWaterMark: 1 << 25 });
+              let lastData = Date.now();
+              const timer = setInterval(() => {
+                if (Date.now() - lastData > idleTimeoutMs) {
+                  try { stream.destroy(new Error(`ytdl stalled for ${Math.round(idleTimeoutMs/1000)}s`)); } catch {}
+                }
+              }, 30_000);
+              stream.on('data', () => { lastData = Date.now(); });
+              stream.on('error', (e) => { clearInterval(timer); reject(e); });
+              out.on('error', (e) => { clearInterval(timer); reject(e); });
+              out.on('finish', () => { clearInterval(timer); resolve(); });
+              stream.pipe(out);
             });
           } catch (err) {
             throw new Error('YouTube download failed via ytdl-core. Tip: install yt-dlp and ensure it is in PATH (winget install yt-dlp.yt-dlp or choco install yt-dlp).');
@@ -142,11 +179,22 @@ export const ingestService = {
         }
       } else {
         console.log('[ingest] HTTP download');
-        const response = await axios.get(sourceUrl, { responseType: 'stream' });
+        const response = await axios.get(sourceUrl, { responseType: 'stream', timeout: 120_000, maxBodyLength: Infinity, maxContentLength: Infinity });
         await new Promise<void>((resolve, reject) => {
-          const stream = response.data.pipe(fs.createWriteStream(`${baseNoExt}.mp4`));
-          stream.on('finish', () => resolve());
-          stream.on('error', reject);
+          const idleTimeoutMs = 180_000; // 3m
+          const out = fs.createWriteStream(`${baseNoExt}.mp4`);
+          const rs = response.data as Readable;
+          let lastData = Date.now();
+          const timer = setInterval(() => {
+            if (Date.now() - lastData > idleTimeoutMs) {
+              try { rs.destroy(new Error(`HTTP download stalled for ${Math.round(idleTimeoutMs/1000)}s`)); } catch {}
+            }
+          }, 30_000);
+          rs.on('data', () => { lastData = Date.now(); });
+          rs.on('error', (e) => { clearInterval(timer); reject(e); });
+          out.on('error', (e) => { clearInterval(timer); reject(e); });
+          out.on('finish', () => { clearInterval(timer); resolve(); });
+          rs.pipe(out);
         });
       }
       // Determine actual output path
