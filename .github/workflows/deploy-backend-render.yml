@@ -7,13 +7,52 @@ on:
       - 'backend/**'
       - 'render.yaml'
       - '.github/workflows/deploy-backend-render.yml'
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Render Deploy Hook
+      - name: Validate deploy config
+        shell: bash
         run: |
-          curl -sSL -X POST "$RENDER_BACKEND_HOOK_URL"
-        env:
-          RENDER_BACKEND_HOOK_URL: ${{ secrets.RENDER_BACKEND_HOOK_URL }}
+          HOOK_RAW="${{ secrets.RENDER_BACKEND_HOOK_URL }}"
+          SERVICE_ID="${{ secrets.RENDER_SERVICE_ID }}"
+          API_KEY="${{ secrets.RENDER_API_KEY }}"
+          if [ -n "$HOOK_RAW" ]; then
+            HOOK_URL="$(printf '%s' "$HOOK_RAW" | xargs)"
+            if ! [[ "$HOOK_URL" =~ ^https:// ]]; then
+              echo "RENDER_BACKEND_HOOK_URL doesn't look like a valid https URL: $HOOK_URL" >&2
+              exit 1
+            fi
+            echo "Using Deploy Hook URL."
+            exit 0
+          fi
+          if [ -n "$SERVICE_ID" ] && [ -n "$API_KEY" ]; then
+            echo "Using Render API (serviceId + apiKey)."
+            exit 0
+          fi
+          echo "Set either RENDER_BACKEND_HOOK_URL or both RENDER_SERVICE_ID and RENDER_API_KEY in GitHub Secrets." >&2
+          exit 1
+
+      - name: Trigger Render deploy
+        shell: bash
+        run: |
+          HOOK_RAW="${{ secrets.RENDER_BACKEND_HOOK_URL }}"
+          SERVICE_ID="${{ secrets.RENDER_SERVICE_ID }}"
+          API_KEY="${{ secrets.RENDER_API_KEY }}"
+          if [ -n "$HOOK_RAW" ]; then
+            HOOK_URL="$(printf '%s' "$HOOK_RAW" | xargs)"
+            curl -fsS -X POST --retry 3 --max-time 60 "$HOOK_URL"
+            exit 0
+          fi
+          if [ -n "$SERVICE_ID" ] && [ -n "$API_KEY" ]; then
+            curl -fsS -X POST \
+              -H "Authorization: Bearer $API_KEY" \
+              -H "Content-Type: application/json" \
+              "https://api.render.com/v1/services/$SERVICE_ID/deploys" \
+              -d '{}'
+            exit 0
+          fi
+          echo "No deploy config provided." >&2
+          exit 1
