@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   mongo:
     image: mongo:6
@@ -11,21 +9,21 @@ services:
       - mongo_data:/data/db
 
   backend:
-    build: ./backend
+    build: ./backend_py
     container_name: shorts_backend
     depends_on:
       - mongo
     env_file:
       - .env
     environment:
-      - NODE_ENV=development
+      - STORAGE_DIR=/app/storage
     ports:
       - "4000:4000"
     volumes:
       - ./storage:/app/storage
-    command: ["node", "dist/index.js"]
 
-  # Optional Redis for BullMQ queue
+  # Optional: Redis + ARQ worker. Uncomment both, then set REDIS_URL in .env
+  # to move the ffmpeg pipeline out of the API process.
   # redis:
   #   image: redis:7-alpine
   #   container_name: shorts_redis
@@ -34,6 +32,20 @@ services:
   #     - "6379:6379"
   #   volumes:
   #     - redis_data:/data
+  #
+  # worker:
+  #   build: ./backend_py
+  #   container_name: shorts_worker
+  #   depends_on:
+  #     - mongo
+  #     - redis
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     - STORAGE_DIR=/app/storage
+  #   volumes:
+  #     - ./storage:/app/storage
+  #   command: ["arq", "app.worker.WorkerSettings"]
 
   frontend:
     build: ./frontend
@@ -42,8 +54,9 @@ services:
       - backend
     ports:
       - "5173:80"
-    environment:
-      - VITE_API_URL=http://backend:4000
+    # NOTE: VITE_API_URL is baked in at build time, not read at runtime, so it
+    # cannot be set here. The bundle falls back to http://localhost:4000, which
+    # works because the backend port is published above.
 
 volumes:
   mongo_data:

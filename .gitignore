@@ -36,3 +36,9 @@ __pycache__/
 storage/
 downloads/
 tmp/
+
+# Python
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/

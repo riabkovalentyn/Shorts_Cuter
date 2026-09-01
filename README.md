@@ -3,60 +3,92 @@
 MVP приложения для нарезки стримов на клипы (Shorts/Reels) с последующей загрузкой на YouTube.
 
 ## Стек
-- Frontend: React + TypeScript + Tailwind
-- Backend: Node.js + TypeScript (Express)
-- DB: MongoDB
-- Очереди: BullMQ (Redis) или in-process
-- Видеообработка: ffmpeg (fluent-ffmpeg)
+- Frontend: React + TypeScript + Tailwind (Vite)
+- Backend: Python 3.11+ (FastAPI)
+- DB: MongoDB (Beanie ODM)
+- Очереди: ARQ (Redis) или in-process background task
+- Загрузка видео: yt-dlp (Python-пакет, отдельный бинарник не нужен)
+- Видеообработка: ffmpeg / ffprobe
 - Авторизация YouTube: OAuth2 (refreshToken)
 - Инфраструктура: Docker + docker-compose
 
 ## Структура
 - `frontend/` — клиентское приложение
-- `backend/` — серверное приложение
+- `backend_py/` — серверное приложение (FastAPI)
 - `docker-compose.yml` — локальный запуск (mongo + backend + frontend)
 
-## Единая точка запуска
+## Требования
 
-Локальная разработка (оба сервиса поднимутся одновременно):
+- Python 3.11+
+- Node.js 20+ (только для фронтенда)
+- FFmpeg (`ffmpeg` и `ffprobe` в PATH)
+- MongoDB (локально или через Docker)
 
-1) Установите зависимости в корне (мы добавили скрипты):
+Установка FFmpeg на Windows:
 
 ```powershell
-cd D:\YouTube_Shorts_Cuter\Shorts_Cuter
-npm install
+winget install Gyan.FFmpeg
+# или: choco install ffmpeg
 ```
 
-2) Поднимите Mongo (в Docker) отдельно, чтобы бэкенд мог подключиться:
+Проверка: `ffmpeg -version; ffprobe -version`. Если команда не найдена — перезапустите терминал, чтобы PATH обновился.
+
+> yt-dlp ставить отдельно **не нужно** — он приходит как зависимость Python.
+
+## Локальная разработка
+
+1) Виртуальное окружение и зависимости бэкенда:
+
+```powershell
+cd backend_py
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+cd ..
+```
+
+2) Зависимости фронтенда и корневые скрипты:
+
+```powershell
+npm install
+npm --prefix frontend install
+```
+
+3) Поднимите Mongo:
 
 ```powershell
 docker compose up -d mongo
 ```
 
-3) Старт разработки (фронтенд + бэкенд):
+4) Скопируйте `backend_py/.env.sample` в `backend_py/.env` и заполните значения.
+
+5) Старт разработки (фронтенд + бэкенд одновременно):
 
 ```powershell
 npm run dev
 ```
 
 - Бэкенд: http://localhost:4000
+- Swagger UI: http://localhost:4000/docs
 - Фронтенд: http://localhost:5173
 
-Сборка проекта:
+Только бэкенд:
 
 ```powershell
-npm run build
+cd backend_py
+.\.venv\Scripts\Activate.ps1
+python -m uvicorn app.main:app --reload --port 4000
 ```
 
-Прод-запуск локально (бэкенд + превью фронта):
+Тесты бэкенда:
 
 ```powershell
-npm start
+npm run test:backend
 ```
 
-## Переменные окружения (YouTube OAuth)
+## Переменные окружения
 
-Заполните файл `backend/.env` по образцу `backend/.env.sample`:
+Файл `backend_py/.env` (образец — `backend_py/.env.sample`):
 
 ```
 PORT=4000
@@ -66,70 +98,72 @@ STORAGE_DIR=./storage
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 YT_REDIRECT_URI=http://localhost:4000/api/auth/youtube/callback
+
+# Необязательно: включает воркер ARQ вместо фоновой задачи в процессе API
+# REDIS_URL=redis://localhost:6379
 ```
 
-Без `GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET` кнопка подключения YouTube вернёт ошибку, это ожидаемо. После заполнения переменных нажмите Connect в Settings, пройдите OAuth, refreshToken сохранится в Mongo.
+Без `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` кнопка подключения YouTube вернёт ошибку — это ожидаемо. После заполнения нажмите Connect в Settings, пройдите OAuth, `refreshToken` сохранится в Mongo.
+
+`MONGO_URI` обязан содержать имя базы (`.../shorts_cuter`), иначе бэкенд не стартует.
+
+## Очередь (необязательно)
+
+По умолчанию пайплайн выполняется фоновой задачей внутри процесса API. Если задать `REDIS_URL`, задачи уходят в ARQ, и нужно поднять воркер:
+
+```powershell
+npm run worker
+# или: cd backend_py; python -m arq app.worker.WorkerSettings
+```
+
+В `docker-compose.yml` для этого есть закомментированные сервисы `redis` и `worker`.
 
 ## Docker Compose (полный стек)
-
-Для прод-сборки/демо можно запустить весь стек через Docker (Mongo + Backend + Frontend):
 
 ```powershell
 docker compose up --build
 ```
 
-Перед этим создайте файл `.env` в корне по образцу `.env.template` и заполните OAuth секреты. Backend автоматически получит их через `env_file`.
+Перед этим создайте `.env` в корне по образцу `.env.template`.
 
-Пример `.env`:
+## API
 
-```
-MONGO_URI=mongodb://mongo:27017/shorts_cuter
-PORT=4000
-STORAGE_DIR=/app/storage
-GOOGLE_CLIENT_ID=...
-GOOGLE_CLIENT_SECRET=...
-YT_REDIRECT_URI=http://localhost:4000/api/auth/youtube/callback
-# REDIS_URL=redis://redis:6379
-```
+| Метод | Путь | Назначение |
+|---|---|---|
+| POST | `/api/projects` | создать задачу нарезки |
+| GET | `/api/jobs/{id}` | статус задачи |
+| GET | `/api/clips?jobId=` | список клипов |
+| POST | `/api/clips/{id}/upload` | залить клип на YouTube |
+| GET | `/api/auth/youtube/url` | старт OAuth |
+| GET | `/api/auth/youtube/callback` | приём OAuth-кода |
+| GET | `/api/auth/youtube/status` | состояние подключения |
+| GET | `/health` | health-check |
 
-## Известные предупреждения/«PROBLEMS»
+Интерактивная документация: `/docs`.
 
-- Tailwind @tailwind/@apply в `frontend/src/index.css`: подавлены в VS Code (это валидные директивы для PostCSS). См. `.vscode/settings.json`.
-- Вкладка Docker может показывать уязвимости базовых образов. Мы используем slim-образы (node:20-bookworm-slim, nginx:bookworm). Для прод окружений используйте внутренний сканер и политику обновлений.
-
-## Трюки и устранение неполадок (Windows)
-
-- Установите FFmpeg (для ffmpeg/ffprobe):
-	- Chocolatey: choco install ffmpeg
-	- Winget: winget install Gyan.FFmpeg
-	- Вручную: скачайте сборку с https://www.gyan.dev/ffmpeg/builds/ и добавьте ffmpeg.exe/ffprobe.exe в PATH
-
-- Установите yt-dlp (надёжная загрузка YouTube):
-	- Chocolatey: choco install yt-dlp
-	- Winget: winget install yt-dlp.yt-dlp
-	- Вручную: https://github.com/yt-dlp/yt-dlp/releases и добавить в PATH
-
-- Проверка:
-	- В PowerShell: ffmpeg -version; ffprobe -version; yt-dlp --version
-	- Если что-то не найдено — перезапустите терминал после установки, чтобы PATH обновился.
-
-## Деплой (бесплатно)
+## Деплой
 
 Вариант A: Render.com (бэкенд + статический фронтенд)
 
-- В репозитории уже есть файл `render.yaml`.
-- В Render создайте новый Blueprint Deploy из вашего форка.
-- Backend (Docker):
-	- Переменные окружения: MONGO_URI (MongoDB Atlas), GOOGLE_CLIENT_ID/SECRET, YT_REDIRECT_URI, опционально REDIS_URL.
+- В репозитории есть `render.yaml`.
+- В Render создайте Blueprint Deploy из вашего форка.
+- Backend (Docker, контекст `backend_py`):
+	- Переменные: `MONGO_URI` (MongoDB Atlas), `GOOGLE_CLIENT_ID`/`SECRET`, `YT_REDIRECT_URI`, опционально `REDIS_URL`.
 	- Диск: имя `storage`, 1 GB+, точка монтирования `/app/storage`.
 - Frontend (Static Site):
-	- После первого деплоя бэкенда возьмите его URL, выставьте на статике переменную `VITE_API_URL` (например, `https://shorts-cuter-backend.onrender.com`).
-	- Пересоберите статику.
+	- После первого деплоя бэкенда возьмите его URL и выставьте `VITE_API_URL`, затем пересоберите статику.
 
-Опционально CI: В Render создайте Deploy Hook для backend и сохраните URL в GitHub Secrets как `RENDER_BACKEND_HOOK_URL`. Workflow `.github/workflows/deploy-backend-render.yml` будет триггерить деплой на пуш в `main`.
+Опционально CI: создайте в Render Deploy Hook и сохраните URL в GitHub Secrets как `RENDER_BACKEND_HOOK_URL`. Workflow `.github/workflows/deploy-backend-render.yml` триггерит деплой на пуш в `main`.
 
 Вариант B: GitHub Pages (только фронтенд)
 
-- Бэкенд разместите на Render (или другом хостинге), возьмите публичный URL.
-- В GitHub Secrets сохраните `PUBLIC_API_URL` с адресом бэкенда.
-- Workflow `.github/workflows/deploy-frontend-pages.yml` собирает `frontend` с `VITE_API_URL` и публикует в GitHub Pages.
+- Бэкенд разместите на Render, возьмите публичный URL.
+- Сохраните его в GitHub Secrets как `PUBLIC_API_URL`.
+- Workflow `.github/workflows/deploy-frontend-pages.yml` соберёт `frontend` и опубликует в Pages.
+
+## Известные ограничения
+
+- Нет аутентификации: API открыт, CORS `*`, YouTube-токен один на всё приложение.
+- Highlight-детектор простой (склейки сцен + тишина). Если сцены не найдены, получится **один** клип с начала видео, а не несколько.
+- Клипы не переводятся в вертикальный формат 9:16 — режется исходный кадр.
+- На free-плане Render нет постоянного диска, а 512 МБ RAM мало для libx264.

@@ -3,13 +3,11 @@ services:
     name: shorts-cuter-backend
     env: docker
     plan: free
-    dockerfilePath: backend/Dockerfile
+    dockerfilePath: backend_py/Dockerfile
+    dockerContext: backend_py
     region: frankfurt
+    healthCheckPath: /health
     envVars:
-      - key: NODE_ENV
-        value: production
-      - key: PORT
-        value: 4000
       - key: STORAGE_DIR
         value: /app/storage
       - key: MONGO_URI
@@ -30,7 +28,7 @@ services:
   - type: static
     name: shorts-cuter-frontend
     plan: free
-    buildCommand: cd frontend && npm ci && npm run build
+    buildCommand: cd frontend && npm install && npm run build
     publishPath: frontend/dist
     headers:
       - path: /**
@@ -38,5 +36,5 @@ services:
         value: public, max-age=600
     envVars:
       - key: VITE_API_URL
-        # Replace with your backend Render URL after first deploy, e.g. https://shorts-cuter-backend.onrender.com
+        # Replace with your backend Render URL after the first deploy.
         value: https://shorts-cuter-backend.onrender.com

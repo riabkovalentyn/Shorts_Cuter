@@ -3,9 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently -n BE,FE -c cyan,magenta \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
-    "build": "concurrently -n BE,FE -c cyan,magenta \"npm --prefix backend run build\" \"npm --prefix frontend run build\"",
-    "start": "concurrently -n BE,FE -c cyan,magenta \"npm --prefix backend run start\" \"npm --prefix frontend run preview\"",
+    "dev": "concurrently -n BE,FE -c cyan,magenta \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend_py && python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 4000",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "start": "concurrently -n BE,FE -c cyan,magenta \"npm run start:backend\" \"npm --prefix frontend run preview\"",
+    "start:backend": "cd backend_py && python -m uvicorn app.main:app --host 0.0.0.0 --port 4000",
+    "test:backend": "cd backend_py && python -m pytest tests -q",
+    "worker": "cd backend_py && python -m arq app.worker.WorkerSettings",
     "compose:up": "docker compose up -d",
     "compose:down": "docker compose down"
   },
