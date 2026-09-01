@@ -3,6 +3,20 @@ import axios from 'axios';
 const baseURL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:4000';
 export const api = axios.create({ baseURL: baseURL + '/api' });
 
+/**
+ * Resolve a clip asset path against the API origin.
+ *
+ * The backend returns storage paths as root-relative ("/storage/clips/x.mp4").
+ * The frontend is served from a different origin in every setup we ship (Vite
+ * on :5173, nginx on :80, GitHub Pages), so using them raw makes the browser
+ * request the asset from the frontend and get index.html back.
+ */
+export function assetUrl(path?: string | null): string | null {
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
+  return baseURL + (path.startsWith('/') ? path : '/' + path);
+}
+
 export async function createProject(sourceUrl: string, clipLengthSec = 30) {
   const { data } = await api.post('/projects', { sourceUrl, clipLengthSec });
   return data as { jobId: string; status: string };

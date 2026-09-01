@@ -37,7 +37,12 @@ def _mmss(seconds: float | None) -> str:
     return str(minutes) + ":" + str(rest).zfill(2)
 
 
-async def populate(clips: list[Clip]) -> None:
+async def populate(clips: list[Clip], keep_text: bool = False) -> None:
+    """Fill in hashtags, and (unless `keep_text`) title and description.
+
+    `keep_text=True` is used when the AI selector already wrote per-clip titles
+    and descriptions - templated text would only make them worse.
+    """
     if not clips:
         return
 
@@ -60,26 +65,30 @@ async def populate(clips: list[Clip]) -> None:
         else:
             timing = "part " + str(i)
 
-        prefix = platform + " " if platform else ""
-        clip.title = prefix + "Highlight " + str(i) + " — " + timing
-        clip.description = "\n".join(
-            part
-            for part in (
-                "Clip " + str(i) + " " + timing + ".",
-                "Source: " + source_url if source_url else None,
-                "Generated on "
-                + date.today().isoformat()
-                + " by Shorts Cuter.",
+        if not keep_text:
+            prefix = platform + " " if platform else ""
+            clip.title = prefix + "Highlight " + str(i) + " — " + timing
+            clip.description = "\n".join(
+                part
+                for part in (
+                    "Clip " + str(i) + " " + timing + ".",
+                    "Source: " + source_url if source_url else None,
+                    "Generated on "
+                    + date.today().isoformat()
+                    + " by Shorts Cuter.",
+                )
+                if part
             )
-            if part
-        )
 
         specific = [tag for tag in (("#" + platform) if platform else None,) if tag]
-        if start is not None:
-            specific.append("#Start_" + str(int(start)) + "s")
-        if span is not None:
-            specific.append("#Duration_" + str(int(span)) + "s")
-        specific.append("#Clip" + str(i))
+        if not keep_text:
+            # Timing tags are noise on YouTube; keep them only on the legacy
+            # templated path so existing behaviour is unchanged there.
+            if start is not None:
+                specific.append("#Start_" + str(int(start)) + "s")
+            if span is not None:
+                specific.append("#Duration_" + str(int(span)) + "s")
+            specific.append("#Clip" + str(i))
 
         clip.hashtags = list(dict.fromkeys(base_tags + specific))
         await clip.save()

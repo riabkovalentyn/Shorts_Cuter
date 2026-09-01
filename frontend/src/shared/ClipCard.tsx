@@ -1,6 +1,8 @@
+import { assetUrl } from '../lib/api';
+
 export default function ClipCard({ clip, onUpload }: { clip: any; onUpload: () => void }) {
-  const thumbUrl = clip.thumbUrl || null;
-  const fileUrl = clip.fileUrl || '#';
+  const thumbUrl = assetUrl(clip.thumbUrl);
+  const fileUrl = assetUrl(clip.fileUrl) || '#';
   const mmss = (s?: number) => {
     if (typeof s !== 'number') return '0:00';
     const m = Math.floor(s / 60);

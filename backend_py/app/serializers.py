@@ -14,6 +14,7 @@ def job_to_dict(job: Job) -> dict[str, Any]:
     return {
         "_id": str(job.id),
         "sourceUrl": job.sourceUrl,
+        "clipLengthSec": job.clipLengthSec,
         "status": job.status,
         "error": job.error,
         "createdAt": job.createdAt.isoformat() if job.createdAt else None,

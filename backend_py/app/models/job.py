@@ -21,6 +21,7 @@ class Job(Document):
     """
 
     sourceUrl: str
+    clipLengthSec: float | None = None
     status: JobStatus = "pending"
     error: Optional[str] = None
     createdAt: datetime = Field(default_factory=_utcnow)

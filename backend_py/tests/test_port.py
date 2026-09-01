@@ -157,32 +157,89 @@ def test_detect_highlights_picks_non_overlapping_and_sorts_by_start(monkeypatch,
     assert max(windows, key=lambda w: w.score).start >= 60.0
 
 
-def test_no_scenes_yields_a_single_leading_window(monkeypatch, tmp_path):
-    """Known quirk, faithfully carried over from the Node implementation.
+def test_no_scenes_still_covers_the_whole_video(monkeypatch, tmp_path):
+    """Regression: a low-motion VOD used to yield ONE clip from 00:00.
 
-    `candidates` always seeds with 0.0, so `picked` is never empty and the
-    "evenly spaced" fallback below it is unreachable. A 95s video with no
-    detected scene cuts therefore produces ONE clip covering 0-30s rather
-    than three. See test_even_spacing_fallback_is_unreachable.
+    Candidates were only ever the scene-cut timestamps, so a static talk
+    stream had none and the "evenly spaced" fallback beneath was unreachable
+    dead code. The stride in _candidate_starts fixes it.
     """
     _stub_detection(monkeypatch, duration=95.0, scenes=[], silences=[(0.0, 95.0)])
     windows = asyncio.run(
         highlight.detect_highlights(tmp_path / "v.mp4", clip_length_sec=30, max_clips=5)
     )
-    assert [w.start for w in windows] == [0.0]
+    assert [w.start for w in windows] == [0.0, 30.0, 60.0, 90.0]
 
 
-def test_even_spacing_fallback_is_unreachable(monkeypatch, tmp_path):
-    """Pin the dead-code bug so a future fix has to update this test."""
-    for duration in (1.0, 10.0, 95.0, 3600.0):
-        _stub_detection(monkeypatch, duration=duration, scenes=[], silences=[])
-        windows = asyncio.run(
-            highlight.detect_highlights(
-                tmp_path / "v.mp4", clip_length_sec=30, max_clips=5
-            )
+def test_low_motion_video_honours_max_clips(monkeypatch, tmp_path):
+    """A 4h VOD with no scene cuts should still fill the requested clip count."""
+    _stub_detection(monkeypatch, duration=4 * 3600.0, scenes=[], silences=[])
+    windows = asyncio.run(
+        highlight.detect_highlights(
+            tmp_path / "v.mp4", clip_length_sec=30, max_clips=10
         )
-        # Always exactly one window starting at 0 - the fallback never fires.
-        assert len(windows) == 1 and windows[0].start == 0.0
+    )
+    assert len(windows) == 10
+
+
+def test_moment_far_from_any_scene_cut_is_reachable(monkeypatch, tmp_path):
+    """The whole timeline must be candidate-eligible, not just scene cuts.
+
+    Previously a great moment 40 minutes after the last scene change could
+    never be clipped, because no candidate window covered it.
+    """
+    duration = 4 * 3600.0
+    moment = 2 * 3600.0  # 2h in, nowhere near the single scene cut at 60s
+    _stub_detection(
+        monkeypatch,
+        duration=duration,
+        scenes=[60.0],
+        # Silent everywhere except a burst of speech around the moment.
+        silences=[(0.0, moment - 5), (moment + 35, duration)],
+    )
+    windows = asyncio.run(
+        highlight.detect_highlights(
+            tmp_path / "v.mp4", clip_length_sec=30, max_clips=3
+        )
+    )
+    assert any(
+        w.start <= moment <= w.start + w.duration for w in windows
+    ), f"moment at {moment}s not covered by {[w.start for w in windows]}"
+
+
+def test_tail_shorter_than_the_minimum_is_not_offered(monkeypatch, tmp_path):
+    """No 1-second sliver clips at the end of a video."""
+    _stub_detection(monkeypatch, duration=62.0, scenes=[], silences=[])
+    windows = asyncio.run(
+        highlight.detect_highlights(
+            tmp_path / "v.mp4", clip_length_sec=30, max_clips=10
+        )
+    )
+    assert all(w.duration >= highlight.MIN_CLIP_SEC for w in windows)
+
+
+def test_video_too_short_for_a_clip_yields_nothing(monkeypatch, tmp_path):
+    """Under the 5s minimum there is no window worth cutting."""
+    _stub_detection(monkeypatch, duration=3.0, scenes=[], silences=[])
+    windows = asyncio.run(
+        highlight.detect_highlights(tmp_path / "v.mp4", clip_length_sec=30)
+    )
+    assert windows == []
+
+
+def test_scoring_is_unchanged_by_the_candidate_fix(monkeypatch, tmp_path):
+    """The formula is still active_seconds + 0.75 * scene_count."""
+    _stub_detection(
+        monkeypatch, duration=120.0, scenes=[10.0, 20.0], silences=[(0.0, 30.0)]
+    )
+    windows = asyncio.run(
+        highlight.detect_highlights(
+            tmp_path / "v.mp4", clip_length_sec=30, max_clips=10
+        )
+    )
+    by_start = {w.start: w for w in windows}
+    # Window [30,60) is fully active, no scene cuts inside it -> exactly 30.0
+    assert by_start[30.0].score == pytest.approx(30.0)
 
 
 def test_detect_highlights_returns_empty_for_zero_duration(monkeypatch, tmp_path):
@@ -254,3 +311,87 @@ def test_cleanup_fragments_removes_only_fragments(tmp_path):
     ingest._cleanup_fragments(base)
     remaining = sorted(p.name for p in tmp_path.iterdir())
     assert remaining == ["job1.mp4"]
+
+
+# --------------------------------------------------------------------------
+# ffmpeg stage timeouts (previously unbounded - a stalled ffmpeg hung the job)
+# --------------------------------------------------------------------------
+
+
+def test_media_run_kills_a_hanging_process():
+    import sys
+    import time
+
+    from app.services import media
+
+    started = time.monotonic()
+    with pytest.raises(media.FFmpegTimeout):
+        asyncio.run(
+            media.run(
+                sys.executable,
+                ["-c", "import time; time.sleep(30)"],
+                timeout=1.0,
+            )
+        )
+    elapsed = time.monotonic() - started
+    # Must give up on the timeout, not wait out the full 30s sleep.
+    assert elapsed < 15, f"run() waited {elapsed:.1f}s instead of timing out"
+
+
+def test_media_run_without_timeout_still_returns():
+    import sys
+
+    from app.services import media
+
+    code, _stderr = asyncio.run(
+        media.run(sys.executable, ["-c", "pass"], timeout=60)
+    )
+    assert code == 0
+
+
+# --------------------------------------------------------------------------
+# source cleanup (the download used to be kept forever, filling the disk)
+# --------------------------------------------------------------------------
+
+
+def test_discard_source_deletes_the_download(storage):
+    from app.workflows import ingest_workflow
+
+    source = storage / "downloads" / "job1.mp4"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(b"x" * 4096)
+
+    ingest_workflow._discard_source(source)
+    assert not source.exists()
+
+
+def test_discard_source_honours_keep_flag(storage, monkeypatch):
+    from app.workflows import ingest_workflow
+
+    monkeypatch.setenv("KEEP_SOURCE_VIDEO", "true")
+    get_settings.cache_clear()
+
+    source = storage / "downloads" / "job2.mp4"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(b"x" * 4096)
+
+    ingest_workflow._discard_source(source)
+    assert source.exists(), "KEEP_SOURCE_VIDEO=true must preserve the download"
+
+
+def test_discard_source_tolerates_missing_file(storage):
+    from app.workflows import ingest_workflow
+
+    ingest_workflow._discard_source(None)
+    ingest_workflow._discard_source(storage / "downloads" / "never-existed.mp4")
+
+
+# --------------------------------------------------------------------------
+# job now records the clip length it was created with
+# --------------------------------------------------------------------------
+
+
+def test_job_persists_clip_length():
+    from app.models import Job
+
+    assert "clipLengthSec" in Job.model_fields

@@ -39,7 +39,8 @@ def _is_skippable(message: str) -> bool:
 async def _cut(source: Path, target: Path, start: float, duration: float) -> None:
     await media.run_checked(
         media.ffmpeg_path(),
-        [
+        timeout=get_settings().clip_timeout_sec,
+        args=[
             "-y",
             "-ss",
             format(start, ".3f"),
@@ -57,7 +58,8 @@ async def _thumbnail(clip_path: Path, target: Path, duration: float) -> None:
     at = max(0.5, min(1.0, duration / 2))
     await media.run_checked(
         media.ffmpeg_path(),
-        [
+        timeout=get_settings().probe_timeout_sec,
+        args=[
             "-y",
             "-ss",
             format(at, ".3f"),
@@ -111,8 +113,9 @@ async def slice_windows(
             score=window.score,
             filePath=str(clip_path),
             thumbPath=thumb,
-            title="Clip " + str(index + 1),
-            description="Auto-generated clip " + str(index + 1),
+            title=window.title or ("Clip " + str(index + 1)),
+            description=window.description
+            or ("Auto-generated clip " + str(index + 1)),
             hashtags=["#Shorts", "#stream"],
         )
         await clip.insert()
